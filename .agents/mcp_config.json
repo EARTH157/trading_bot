@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "trading-database": {
+      "command": "uvx",
+      "args": ["mcp-server-sqlite", "--db-path", "./database/trading.db"],
+      "description": "เชื่อมต่อฐานข้อมูล SQLite เพื่อให้ AI สามารถตรวจสอบประวัติการส่งคำสั่งและสถานะพอร์ตได้โดยตรง"
+    }
+  }
+}

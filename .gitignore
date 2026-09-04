@@ -1,0 +1,36 @@
+﻿# Environment variables & secrets (CRITICAL)
+.env
+.env.local
+*.key
+*.pem
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Database & Storage
+*.sqlite
+*.sqlite3
+*.db
+trading_bot.db
+
+# Temporary Data & Scraped News
+data/temp_news/
+data/cache/
+*.log
+
+# IDE & Editor files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

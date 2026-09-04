@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="th" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Multi-Agent Stock Trading Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#070a13',
+                        cardBg: '#0f172a',
+                        cardBorder: '#1e293b',
+                        brandBlue: '#38bdf8',
+                        brandGreen: '#10b981',
+                        brandRed: '#f43f5e',
+                        brandPurple: '#a855f7',
+                        brandAmber: '#f59e0b'
+                    },
+                    animation: {
+                        'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'beam-flow': 'beamFlow 1.2s linear infinite',
+                        'spin-slow': 'spin 6s linear infinite',
+                        'radar-sweep': 'radarSweep 2s linear infinite'
+                    },
+                    keyframes: {
+                        pulseGlow: {
+                            '0%, 100%': { opacity: '1', filter: 'drop-shadow(0 0 15px rgba(56, 189, 248, 0.6))' },
+                            '50%': { opacity: '0.7', filter: 'drop-shadow(0 0 5px rgba(56, 189, 248, 0.2))' }
+                        },
+                        beamFlow: {
+                            '0%': { backgroundPosition: '0% 50%' },
+                            '100%': { backgroundPosition: '200% 50%' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- TradingView Lightweight Charts CDN -->
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom scrollbars */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #070a13; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+        /* Energy Laser Beam between agents */
+        .energy-beam {
+            background: linear-gradient(90deg, #1e293b 0%, #38bdf8 50%, #1e293b 100%);
+            background-size: 200% 100%;
+            height: 3px;
+        }
+        .energy-beam.active {
+            background: linear-gradient(90deg, #38bdf8, #a855f7, #10b981);
+            background-size: 200% 100%;
+            animation: beamFlow 1s linear infinite;
+            box-shadow: 0 0 12px #38bdf8;
+        }
+
+        /* Equalizer soundwave bars */
+        .eq-bar {
+            width: 3px;
+            background-color: currentColor;
+            border-radius: 2px;
+            animation: eqWave 0.8s ease-in-out infinite alternate;
+        }
+        .eq-bar:nth-child(2) { animation-delay: 0.2s; }
+        .eq-bar:nth-child(3) { animation-delay: 0.4s; }
+        .eq-bar:nth-child(4) { animation-delay: 0.6s; }
+
+        @keyframes eqWave {
+            0% { height: 4px; }
+            100% { height: 16px; }
+        }
+
+        /* Active Card Neon Glow */
+        .agent-card-active {
+            border-color: #38bdf8 !important;
+            box-shadow: 0 0 25px rgba(56, 189, 248, 0.25), inset 0 0 15px rgba(56, 189, 248, 0.05);
+            transform: translateY(-2px);
+        }
+        .agent-card-completed {
+            border-color: rgba(16, 185, 129, 0.4) !important;
+        }
+    </style>
+</head>
+<body class="bg-darkBg text-slate-100 min-h-screen font-sans antialiased selection:bg-brandBlue selection:text-black">
+
+    <!-- Top Navigation Bar -->
+    <header class="border-b border-cardBorder bg-cardBg/90 backdrop-blur-md sticky top-0 z-40 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <div class="relative w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
+                <i data-lucide="bot" class="w-6 h-6 text-white"></i>
+                <span class="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+                </span>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-wide flex items-center gap-2">
+                    Multi-Agent Trading Bot
+                    <span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        ● {{ app_mode | upper }}
+                    </span>
+                </h1>
+                <p class="text-xs text-slate-400">Autonomous Collaborative AI System (Powered by Gemini & Real-time Feeds)</p>
+            </div>
+        </div>
+
+        <!-- System Badges & Actions -->
+        <div class="flex items-center gap-3">
+            <div class="hidden md:flex items-center gap-2 text-xs bg-slate-900/80 px-3 py-1.5 rounded-lg border border-cardBorder">
+                <span class="text-slate-400">Model:</span>
+                <span class="text-brandPurple font-medium">✨ {{ gemini_model }}</span>
+                {% if has_gemini_key %}
+                <span class="text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                    API Active
+                </span>
+                {% else %}
+                <span class="text-amber-400 bg-amber-400/10 px-1.5 py-0.5 rounded text-[10px]" title="ใส่ GEMINI_API_KEY ใน .env เพื่อเปิดโหมด LLM เต็มรูปแบบ">
+                    Heuristic Mode
+                </span>
+                {% endif %}
+            </div>
+
+            <!-- Run Pipeline Button -->
+            <button id="btn-run-pipeline" onclick="triggerPipeline()" class="relative group flex items-center gap-2 bg-gradient-to-r from-sky-500 via-indigo-600 to-purple-600 hover:brightness-110 text-white font-medium px-4 py-2 rounded-xl text-sm shadow-lg shadow-indigo-500/20 transition-all active:scale-95">
+                <span class="absolute -inset-0.5 bg-gradient-to-r from-sky-500 to-purple-600 rounded-xl blur opacity-30 group-hover:opacity-60 transition duration-300"></span>
+                <span class="relative flex items-center gap-2">
+                    <i data-lucide="play" class="w-4 h-4" id="run-icon"></i>
+                    <span id="run-text">Run 4-Agent Pipeline</span>
+                </span>
+            </button>
+
+            <!-- Emergency Sell All -->
+            <button onclick="emergencySellAll()" class="flex items-center gap-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-3.5 py-2 rounded-xl text-sm font-medium transition-all active:scale-95" title="ปิดทุก Position ทันที">
+                <i data-lucide="alert-octagon" class="w-4 h-4"></i>
+                <span class="hidden sm:inline">Sell All</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto p-4 sm:p-6 space-y-6">
+
+        <!-- Metrics Overview Cards -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <!-- Equity -->
+            <div class="bg-cardBg border border-cardBorder rounded-2xl p-5 shadow-sm relative overflow-hidden group hover:border-slate-700 transition">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                    <span class="text-xs font-medium uppercase tracking-wider">Total Equity (มูลค่าพอร์ต)</span>
+                    <i data-lucide="wallet" class="w-4 h-4 text-brandBlue"></i>
+                </div>
+                <div class="text-2xl font-bold tracking-tight text-white" id="val-equity">$100,000.00</div>
+                <div class="text-xs text-slate-400 mt-1 flex items-center gap-1.5">
+                    <span>Cash:</span>
+                    <span class="font-medium text-slate-200" id="val-cash">$100,000.00</span>
+                </div>
+            </div>
+
+            <!-- Unrealized PnL -->
+            <div class="bg-cardBg border border-cardBorder rounded-2xl p-5 shadow-sm relative overflow-hidden group hover:border-slate-700 transition">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                    <span class="text-xs font-medium uppercase tracking-wider">Unrealized PnL (กำไรที่ยังไม่ปิด)</span>
+                    <i data-lucide="trending-up" class="w-4 h-4 text-emerald-400"></i>
+                </div>
+                <div class="text-2xl font-bold tracking-tight" id="val-unrealized-pnl">$0.00</div>
+                <div class="text-xs text-slate-400 mt-1" id="val-unrealized-pct">0.00%</div>
+            </div>
+
+            <!-- Realized PnL -->
+            <div class="bg-cardBg border border-cardBorder rounded-2xl p-5 shadow-sm relative overflow-hidden group hover:border-slate-700 transition">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                    <span class="text-xs font-medium uppercase tracking-wider">Realized PnL (กำไรที่ปิดแล้ว)</span>
+                    <i data-lucide="circle-dollar-sign" class="w-4 h-4 text-indigo-400"></i>
+                </div>
+                <div class="text-2xl font-bold tracking-tight" id="val-realized-pnl">$0.00</div>
+                <div class="text-xs text-slate-400 mt-1">สะสมจากการปิดออเดอร์</div>
+            </div>
+
+            <!-- Active Positions Count -->
+            <div class="bg-cardBg border border-cardBorder rounded-2xl p-5 shadow-sm relative overflow-hidden group hover:border-slate-700 transition">
+                <div class="flex items-center justify-between text-slate-400 mb-2">
+                    <span class="text-xs font-medium uppercase tracking-wider">Positions (จำนวนหุ้นในพอร์ต)</span>
+                    <i data-lucide="layers" class="w-4 h-4 text-amber-400"></i>
+                </div>
+                <div class="text-2xl font-bold tracking-tight text-white" id="val-positions-count">0 / 5</div>
+                <div class="text-xs text-slate-400 mt-1">Max 20% allocation ต่อตัว</div>
+            </div>
+        </section>
+
+        <!-- 4 AI AGENTS REAL-TIME COLLABORATIVE PIPELINE -->
+        <section class="bg-cardBg border border-cardBorder rounded-2xl p-5 sm:p-6 shadow-xl relative overflow-hidden">
+            <!-- Background Circuit Grid Effect -->
+            <div class="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px] opacity-20 pointer-events-none"></div>
+
+            <div class="relative z-10 flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-cardBorder">
+                <div>
+                    <h2 class="text-base font-bold text-white flex items-center gap-2.5">
+                        <span class="flex h-3 w-3 relative">
+                            <span id="pipeline-ping" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75 hidden"></span>
+                            <span id="pipeline-dot" class="relative inline-flex rounded-full h-3 w-3 bg-slate-500"></span>
+                        </span>
+                        <span>4 AI Autonomous Collaborative Pipeline</span>
+                        <span id="pipeline-status-badge" class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
+                            STANDBY
+                        </span>
+                    </h2>
+                    <p class="text-xs text-slate-400 mt-1">มอนิเตอร์การทำงานร่วมกันของ 4 Agents แบบ Real-time (การส่งมอบข้อมูล, การคิด, และการตัดสินใจ)</p>
+                </div>
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="text-slate-400">รอบล่าสุด:</span>
+                    <span class="font-mono text-slate-200 bg-slate-900/80 px-2.5 py-1 rounded-lg border border-cardBorder" id="pipeline-last-run">
+                        ยังไม่เคยรัน
+                    </span>
+                </div>
+            </div>
+
+            <!-- Pipeline Cards Container with Connecting Laser Beams -->
+            <div class="relative z-10 grid grid-cols-1 md:grid-cols-4 gap-4 lg:gap-6 items-stretch">
+                
+                <!-- Agent 1 Card -->
+                <div id="card-agent-1" class="bg-slate-900/90 border border-cardBorder rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 relative group">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                                Agent 01
+                            </span>
+                            <div class="flex items-center gap-1.5" id="agent-1-eq">
+                                <span class="w-2 h-2 rounded-full bg-slate-600" id="agent-1-status-dot"></span>
+                                <span class="text-[10px] font-mono text-slate-400 uppercase" id="agent-1-status-text">Idle</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2.5 mb-2">
+                            <div class="w-8 h-8 rounded-lg bg-sky-500/20 text-sky-400 flex items-center justify-center" id="agent-1-icon-box">
+                                <i data-lucide="newspaper" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-sm text-white">News Scout</h3>
+                                <p class="text-[11px] text-slate-400">ดึงข่าวด่วน & สร้าง .md</p>
+                            </div>
+                        </div>
+
+                        <!-- Live Action Box -->
+                        <div class="mt-3 bg-slate-950/80 rounded-xl p-3 border border-slate-800 text-xs min-h-[70px] flex flex-col justify-center">
+                            <div class="text-[10px] text-slate-500 mb-1 flex items-center gap-1">
+                                <i data-lucide="activity" class="w-3 h-3 text-sky-400"></i>
+                                <span>กำลังทำอะไรอยู่:</span>
+                            </div>
+                            <p class="text-[11px] text-slate-200 leading-relaxed font-mono" id="agent-1-thought">
+                                สแตนด์บาย รอเริ่มรอบการวิเคราะห์
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                        <button onclick="openNewsModal()" class="text-sky-400 hover:text-sky-300 flex items-center gap-1 text-[11px] transition">
+                            <i data-lucide="file-text" class="w-3 h-3"></i>
+                            ดูไฟล์ Markdown
+                        </button>
+                        <span class="text-[10px] text-slate-500 font-mono" id="agent-1-metric">0 files</span>
+                    </div>
+                </div>
+
+                <!-- Agent 2 Card -->
+                <div id="card-agent-2" class="bg-slate-900/90 border border-cardBorder rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 relative group">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">
+                                Agent 02
+                            </span>
+                            <div class="flex items-center gap-1.5" id="agent-2-eq">
+                                <span class="w-2 h-2 rounded-full bg-slate-600" id="agent-2-status-dot"></span>
+                                <span class="text-[10px] font-mono text-slate-400 uppercase" id="agent-2-status-text">Idle</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2.5 mb-2">
+                            <div class="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center" id="agent-2-icon-box">
+                                <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-sm text-white">Sentiment Analyst</h3>
+                                <p class="text-[11px] text-slate-400">Gemini 2.5 LLM Reasoner</p>
+                            </div>
+                        </div>
+
+                        <!-- Live Action Box -->
+                        <div class="mt-3 bg-slate-950/80 rounded-xl p-3 border border-slate-800 text-xs min-h-[70px] flex flex-col justify-center">
+                            <div class="text-[10px] text-slate-500 mb-1 flex items-center gap-1">
+                                <i data-lucide="sparkles" class="w-3 h-3 text-purple-400"></i>
+                                <span>กำลังทำอะไรอยู่:</span>
+                            </div>
+                            <p class="text-[11px] text-slate-200 leading-relaxed font-mono" id="agent-2-thought">
+                                รอรับไฟล์ข่าวจาก Agent 1
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                        <span class="text-slate-400 text-[11px]">Sentiment Score:</span>
+                        <span class="text-[11px] font-bold text-slate-300 font-mono" id="agent-2-metric">-</span>
+                    </div>
+                </div>
+
+                <!-- Agent 3 Card -->
+                <div id="card-agent-3" class="bg-slate-900/90 border border-cardBorder rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 relative group">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                Agent 03
+                            </span>
+                            <div class="flex items-center gap-1.5" id="agent-3-eq">
+                                <span class="w-2 h-2 rounded-full bg-slate-600" id="agent-3-status-dot"></span>
+                                <span class="text-[10px] font-mono text-slate-400 uppercase" id="agent-3-status-text">Idle</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2.5 mb-2">
+                            <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center" id="agent-3-icon-box">
+                                <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-sm text-white">Market Screener</h3>
+                                <p class="text-[11px] text-slate-400">EMA, RSI & Setup Filter</p>
+                            </div>
+                        </div>
+
+                        <!-- Live Action Box -->
+                        <div class="mt-3 bg-slate-950/80 rounded-xl p-3 border border-slate-800 text-xs min-h-[70px] flex flex-col justify-center">
+                            <div class="text-[10px] text-slate-500 mb-1 flex items-center gap-1">
+                                <i data-lucide="gauge" class="w-3 h-3 text-amber-400"></i>
+                                <span>กำลังทำอะไรอยู่:</span>
+                            </div>
+                            <p class="text-[11px] text-slate-200 leading-relaxed font-mono" id="agent-3-thought">
+                                รอข้อมูลเทคนิคและการประเมิน
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                        <span class="text-slate-400 text-[11px]">หุ้นน่าซื้อ (BUY):</span>
+                        <span class="text-[11px] font-bold text-emerald-400 font-mono" id="agent-3-metric">0 หุ้น</span>
+                    </div>
+                </div>
+
+                <!-- Agent 4 Card -->
+                <div id="card-agent-4" class="bg-slate-900/90 border border-cardBorder rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 relative group">
+                    <div>
+                        <div class="flex items-center justify-between mb-3">
+                            <span class="text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                Agent 04
+                            </span>
+                            <div class="flex items-center gap-1.5" id="agent-4-eq">
+                                <span class="w-2 h-2 rounded-full bg-slate-600" id="agent-4-status-dot"></span>
+                                <span class="text-[10px] font-mono text-slate-400 uppercase" id="agent-4-status-text">Idle</span>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2.5 mb-2">
+                            <div class="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center" id="agent-4-icon-box">
+                                <i data-lucide="shield-check" class="w-4 h-4"></i>
+                            </div>
+                            <div>
+                                <h3 class="font-bold text-sm text-white">Risk Guardian</h3>
+                                <p class="text-[11px] text-slate-400">Position Sizer & Executor</p>
+                            </div>
+                        </div>
+
+                        <!-- Live Action Box -->
+                        <div class="mt-3 bg-slate-950/80 rounded-xl p-3 border border-slate-800 text-xs min-h-[70px] flex flex-col justify-center">
+                            <div class="text-[10px] text-slate-500 mb-1 flex items-center gap-1">
+                                <i data-lucide="lock" class="w-3 h-3 text-emerald-400"></i>
+                                <span>กำลังทำอะไรอยู่:</span>
+                            </div>
+                            <p class="text-[11px] text-slate-200 leading-relaxed font-mono" id="agent-4-thought">
+                                พร้อมปกป้องความเสี่ยงพอร์ต
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                        <span class="text-slate-400 text-[11px]">การยิงออเดอร์:</span>
+                        <span class="text-[11px] font-bold text-slate-300 font-mono" id="agent-4-metric">0 orders</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- LIVE AI COGNITIVE STREAM (Terminal Radar Console) -->
+            <div class="mt-5 bg-slate-950 rounded-xl border border-cardBorder overflow-hidden shadow-inner">
+                <div class="bg-slate-900/90 px-4 py-2 border-b border-cardBorder flex items-center justify-between">
+                    <div class="flex items-center gap-2 text-xs font-mono text-slate-300">
+                        <i data-lucide="terminal" class="w-3.5 h-3.5 text-sky-400"></i>
+                        <span class="font-bold text-white">Live AI Cognitive Stream</span>
+                        <span class="text-slate-500">|</span>
+                        <span class="text-[11px] text-slate-400">การส่งต่อข้อมูลแบบเรียลไทม์ระหว่าง Agents</span>
+                    </div>
+                    <button onclick="clearCognitiveStream()" class="text-[10px] text-slate-500 hover:text-slate-300 font-mono">
+                        Clear Stream
+                    </button>
+                </div>
+                <div id="cognitive-stream" class="p-3.5 font-mono text-xs text-slate-300 space-y-1.5 max-h-36 overflow-y-auto">
+                    <div class="text-slate-500 italic flex items-center gap-2">
+                        <span class="text-sky-500">●</span>
+                        <span>ระบบพร้อมทำงาน กด "Run 4-Agent Pipeline" เพื่อเริ่มการประสานงานสด</span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Charts & Market Section -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left 2 Cols: Lightweight Chart -->
+            <div class="lg:col-span-2 bg-cardBg border border-cardBorder rounded-2xl p-5 flex flex-col shadow-sm">
+                <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <div class="flex items-center gap-3">
+                        <select id="select-symbol" onchange="loadChart(this.value)" class="bg-slate-900 border border-cardBorder text-white text-sm font-bold rounded-xl px-3 py-1.5 outline-none focus:border-brandBlue cursor-pointer">
+                            {% for sym in watchlist %}
+                            <option value="{{ sym }}">{{ sym }}</option>
+                            {% endfor %}
+                        </select>
+                        <span class="text-xs text-slate-400 flex items-center gap-2">
+                            <span class="inline-block w-2.5 h-0.5 bg-blue-500"></span> EMA 20
+                            <span class="inline-block w-2.5 h-0.5 bg-amber-500"></span> EMA 50
+                        </span>
+                    </div>
+                    <div class="text-xs text-slate-400">TradingView Lightweight Chart (Daily Candles)</div>
+                </div>
+                <!-- Chart Container -->
+                <div id="chart-container" class="w-full h-80 rounded-xl overflow-hidden bg-[#070a12]"></div>
+            </div>
+
+            <!-- Right 1 Col: AI Screening Table -->
+            <div class="bg-cardBg border border-cardBorder rounded-2xl p-5 flex flex-col shadow-sm">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-3">
+                    <i data-lucide="list-filter" class="w-4 h-4 text-amber-400"></i>
+                    ผลการคัดกรองหุ้น (Screening Ranking)
+                </h3>
+                <div class="overflow-y-auto max-h-80 space-y-2.5 pr-1" id="screener-list">
+                    <p class="text-xs text-slate-500 text-center py-8">รัน 4-Agent Pipeline เพื่อแสดงอันดับและสัญญาณ</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Positions & Order History Section -->
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left 2 Cols: Open Positions -->
+            <div class="lg:col-span-2 bg-cardBg border border-cardBorder rounded-2xl p-5 shadow-sm">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                        <i data-lucide="briefcase" class="w-4 h-4 text-brandBlue"></i>
+                        หุ้นที่ถือครองในพอร์ต (Open Positions)
+                    </h3>
+                    <span class="text-xs text-slate-400">มีระบบ Stop Loss / Take Profit อัตโนมัติ</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead>
+                            <tr class="text-slate-400 border-b border-cardBorder">
+                                <th class="pb-2 font-medium">สัญลักษณ์</th>
+                                <th class="pb-2 font-medium">จำนวน</th>
+                                <th class="pb-2 font-medium">ทุนเฉลี่ย</th>
+                                <th class="pb-2 font-medium">ราคาล่าสุด</th>
+                                <th class="pb-2 font-medium">Stop Loss</th>
+                                <th class="pb-2 font-medium">Take Profit</th>
+                                <th class="pb-2 font-medium">Unrealized PnL</th>
+                                <th class="pb-2 font-medium text-right">การจัดการ</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-table-body" class="divide-y divide-cardBorder/50">
+                            <tr>
+                                <td colspan="8" class="text-center py-6 text-slate-500">ไม่มีหุ้นถือครองในพอร์ต (เงินสดพร้อมเข้าซื้อเมื่อมีสัญญาณ)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Right 1 Col: Recent Orders -->
+            <div class="bg-cardBg border border-cardBorder rounded-2xl p-5 shadow-sm">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2 mb-3">
+                    <i data-lucide="clock" class="w-4 h-4 text-slate-400"></i>
+                    ประวัติคำสั่งซื้อขายล่าสุด (Orders)
+                </h3>
+                <div class="overflow-y-auto max-h-72 space-y-2 pr-1" id="orders-list">
+                    <p class="text-xs text-slate-500 text-center py-6">ยังไม่มีประวัติคำสั่ง</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Modal: View News Markdown -->
+    <div id="news-modal" class="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-cardBg border border-cardBorder rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <div class="p-4 border-b border-cardBorder flex items-center justify-between">
+                <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i data-lucide="file-text" class="w-4 h-4 text-brandBlue"></i>
+                    ไฟล์ Markdown ชั่วคราว (สร้างโดย Agent 1: News Scout)
+                </h4>
+                <button onclick="closeNewsModal()" class="text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 space-y-3" id="news-modal-content">
+                <p class="text-xs text-slate-400">กำลังโหลดรายการไฟล์...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Frontend Script -->
+    <script>
+        let chart = null;
+        let candleSeries = null;
+        let ema20Series = null;
+        let ema50Series = null;
+
+        // Initialize Icons
+        lucide.createIcons();
+
+        // Initialize Chart
+        function initChart() {
+            const container = document.getElementById('chart-container');
+            chart = LightweightCharts.createChart(container, {
+                layout: {
+                    background: { color: '#070a12' },
+                    textColor: '#94a3b8',
+                },
+                grid: {
+                    vertLines: { color: '#131b2e' },
+                    horzLines: { color: '#131b2e' },
+                },
+                timeScale: {
+                    borderColor: '#1e293b',
+                },
+                rightPriceScale: {
+                    borderColor: '#1e293b',
+                },
+            });
+
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#10b981',
+                downColor: '#f43f5e',
+                borderVisible: false,
+                wickUpColor: '#10b981',
+                wickDownColor: '#f43f5e',
+            });
+
+            ema20Series = chart.addLineSeries({
+                color: '#38bdf8',
+                lineWidth: 2,
+            });
+
+            ema50Series = chart.addLineSeries({
+                color: '#f59e0b',
+                lineWidth: 2,
+            });
+
+            window.addEventListener('resize', () => {
+                chart.applyOptions({ width: container.clientWidth });
+            });
+        }
+
+        async function loadChart(symbol) {
+            try {
+                const res = await fetch(`/api/chart/${symbol}`);
+                const data = await res.json();
+                if (data.data && data.data.length > 0) {
+                    candleSeries.setData(data.data.map(d => ({
+                        time: d.time,
+                        open: d.open,
+                        high: d.high,
+                        low: d.low,
+                        close: d.close
+                    })));
+
+                    const ema20Data = data.data.filter(d => d.ema20 !== null).map(d => ({ time: d.time, value: d.ema20 }));
+                    const ema50Data = data.data.filter(d => d.ema50 !== null).map(d => ({ time: d.time, value: d.ema50 }));
+                    ema20Series.setData(ema20Data);
+                    ema50Series.setData(ema50Data);
+
+                    chart.timeScale().fitContent();
+                }
+            } catch (err) {
+                console.error("Error loading chart data:", err);
+            }
+        }
+
+        // Real-time Cognitive Stream Logger
+        function appendCognitiveLog(tag, message, colorClass = "text-sky-400") {
+            const stream = document.getElementById('cognitive-stream');
+            const now = new Date().toLocaleTimeString('th-TH');
+            const entry = document.createElement('div');
+            entry.className = "flex items-start gap-2 animate-fadeIn";
+            entry.innerHTML = `
+                <span class="text-slate-500 text-[10px] select-none">[${now}]</span>
+                <span class="font-bold text-[11px] ${colorClass}">[${tag}]</span>
+                <span class="text-slate-200 text-[11px] flex-1">${message}</span>
+            `;
+            stream.appendChild(entry);
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        function clearCognitiveStream() {
+            document.getElementById('cognitive-stream').innerHTML = `
+                <div class="text-slate-500 italic flex items-center gap-2">
+                    <span class="text-sky-500">●</span>
+                    <span>ล้างประวัติเรียบร้อย รอสัญญาณจาก Pipeline</span>
+                </div>
+            `;
+        }
+
+        // Set Agent Card Visual State (idle, running, completed)
+        function setAgentCardState(agentId, state, thoughtText = "", metricText = "") {
+            const card = document.getElementById(`card-agent-${agentId}`);
+            const dot = document.getElementById(`agent-${agentId}-status-dot`);
+            const statusText = document.getElementById(`agent-${agentId}-status-text`);
+            const thought = document.getElementById(`agent-${agentId}-thought`);
+            const metric = document.getElementById(`agent-${agentId}-metric`);
+
+            if (!card) return;
+
+            if (thoughtText && thought) thought.innerText = thoughtText;
+            if (metricText && metric) metric.innerText = metricText;
+
+            if (state === "RUNNING") {
+                card.className = "bg-slate-900/90 border border-cardBorder rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 relative group agent-card-active";
+                dot.className = "w-2 h-2 rounded-full bg-sky-400 animate-ping";
+                statusText.className = "text-[10px] font-mono text-sky-400 uppercase font-bold tracking-wider";
+                statusText.innerText = "Thinking...";
+            } else if (state === "COMPLETED") {
+                card.className = "bg-slate-900/90 border border-cardBorder rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 relative group agent-card-completed";
+                dot.className = "w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400";
+                statusText.className = "text-[10px] font-mono text-emerald-400 uppercase font-bold tracking-wider";
+                statusText.innerText = "Done";
+            } else {
+                card.className = "bg-slate-900/90 border border-cardBorder rounded-2xl p-4 flex flex-col justify-between transition-all duration-300 relative group";
+                dot.className = "w-2 h-2 rounded-full bg-slate-600";
+                statusText.className = "text-[10px] font-mono text-slate-400 uppercase";
+                statusText.innerText = "Idle";
+            }
+        }
+
+        // Handle Incoming WebSocket Real-time Events
+        function handleRealtimeEvent(evt) {
+            const type = evt.type;
+
+            if (type === "PIPELINE_START") {
+                document.getElementById('pipeline-ping').classList.remove('hidden');
+                document.getElementById('pipeline-dot').className = "relative inline-flex rounded-full h-3 w-3 bg-sky-400";
+                const badge = document.getElementById('pipeline-status-badge');
+                badge.innerText = "AI COLLABORATING...";
+                badge.className = "text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/40 animate-pulse";
+
+                // Reset cards to idle
+                for (let i = 1; i <= 4; i++) {
+                    setAgentCardState(i, "IDLE", "กำลังเริ่มวัฏจักร...", "-");
+                }
+                appendCognitiveLog("SYSTEM", evt.message || "🚀 เริ่มต้นรอบการทำงาน AI Pipeline", "text-sky-400 font-bold");
+            }
+            else if (type === "AGENT_STATE") {
+                const id = evt.agent_id;
+                const status = evt.status;
+                const thought = evt.thought || "";
+
+                if (status === "RUNNING") {
+                    setAgentCardState(id, "RUNNING", thought);
+                    const tagNames = ["News Scout", "Sentiment", "Screener", "Risk Guard"];
+                    appendCognitiveLog(`Agent ${id} (${tagNames[id-1]})`, thought, id === 1 ? "text-sky-400" : id === 2 ? "text-purple-400" : id === 3 ? "text-amber-400" : "text-emerald-400");
+                } else if (status === "COMPLETED") {
+                    let metric = "-";
+                    if (id === 1 && evt.data && evt.data.news_files) {
+                        metric = `${Object.keys(evt.data.news_files).length} files`;
+                    } else if (id === 2 && evt.data && evt.data.sentiment_analysis) {
+                        const vals = Object.values(evt.data.sentiment_analysis);
+                        const avg = vals.reduce((a, c) => a + (c.score || 0), 0) / (vals.length || 1);
+                        metric = `Avg: ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}`;
+                    } else if (id === 3 && evt.data && evt.data.buy_candidates) {
+                        metric = `${evt.data.buy_candidates.length} หุ้น`;
+                        renderScreenerList(evt.data.screening_results || []);
+                    } else if (id === 4 && evt.data && evt.data.executed_orders) {
+                        metric = `${evt.data.executed_orders.length} orders`;
+                    }
+                    setAgentCardState(id, "COMPLETED", thought, metric);
+                    appendCognitiveLog(`Agent ${id}`, `✓ ${evt.summary || thought}`, "text-emerald-400");
+                }
+            }
+            else if (type === "DATA_TRANSFER") {
+                appendCognitiveLog("DATA BEAM", evt.message, "text-indigo-300 italic");
+            }
+            else if (type === "PIPELINE_COMPLETE") {
+                document.getElementById('pipeline-ping').classList.add('hidden');
+                document.getElementById('pipeline-dot').className = "relative inline-flex rounded-full h-3 w-3 bg-emerald-500";
+                const badge = document.getElementById('pipeline-status-badge');
+                badge.innerText = "COMPLETED";
+                badge.className = "text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+
+                appendCognitiveLog("SUCCESS", evt.message, "text-emerald-400 font-bold");
+                refreshStatus();
+            }
+            else if (type === "PIPELINE_ERROR") {
+                document.getElementById('pipeline-ping').classList.add('hidden');
+                document.getElementById('pipeline-dot').className = "relative inline-flex rounded-full h-3 w-3 bg-rose-500";
+                appendCognitiveLog("ERROR", evt.message, "text-rose-400 font-bold");
+            }
+            else if (type === "TICK") {
+                // Heartbeat tick
+                if (evt.equity) {
+                    document.getElementById('val-equity').innerText = `$${evt.equity.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                    document.getElementById('val-cash').innerText = `$${evt.cash.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                }
+            }
+        }
+
+        async function refreshStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+
+                // 1. Update Metrics
+                const acc = data.account;
+                document.getElementById('val-equity').innerText = `$${acc.equity.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+                document.getElementById('val-cash').innerText = `$${acc.cash_balance.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+
+                const unpnlEl = document.getElementById('val-unrealized-pnl');
+                unpnlEl.innerText = `${acc.unrealized_pnl >= 0 ? '+' : ''}$${acc.unrealized_pnl.toFixed(2)}`;
+                unpnlEl.className = `text-2xl font-bold tracking-tight ${acc.unrealized_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`;
+
+                const repnlEl = document.getElementById('val-realized-pnl');
+                repnlEl.innerText = `${acc.realized_pnl >= 0 ? '+' : ''}$${acc.realized_pnl.toFixed(2)}`;
+                repnlEl.className = `text-2xl font-bold tracking-tight ${acc.realized_pnl >= 0 ? 'text-indigo-400' : 'text-rose-400'}`;
+
+                document.getElementById('val-positions-count').innerText = `${data.positions.length} / 5`;
+
+                // 2. Update Pipeline Status & Sync Cards from Agent Logs or active state
+                const pl = data.pipeline;
+                document.getElementById('pipeline-last-run').innerText = pl.last_run || 'ยังไม่เคยรัน';
+
+                if (pl.is_running) {
+                    document.getElementById('run-text').innerText = "AI Running...";
+                    document.getElementById('btn-run-pipeline').classList.add('opacity-75', 'cursor-not-allowed');
+                    document.getElementById('pipeline-ping').classList.remove('hidden');
+                    document.getElementById('pipeline-dot').className = "relative inline-flex rounded-full h-3 w-3 bg-sky-400";
+                    const badge = document.getElementById('pipeline-status-badge');
+                    badge.innerText = "AI COLLABORATING...";
+                    badge.className = "text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/40 animate-pulse";
+
+                    const activeId = pl.current_agent || 1;
+                    const thoughts = [
+                        "กำลังสแกน RSS และดึงข่าวสารล่าสุด...",
+                        "กำลังเชื่อมต่อ Google Gemini 2.5 Flash เพื่อวิเคราะห์ Sentiment...",
+                        "กำลังคำนวณ EMA 20/50, RSI 14 และจัดอันดับ Setup...",
+                        "กำลังคำนวณ Risk Guardrail และส่งคำสั่งเทรด..."
+                    ];
+
+                    for (let i = 1; i <= 4; i++) {
+                        if (i < activeId) {
+                            setAgentCardState(i, "COMPLETED", "วิเคราะห์สำเร็จเรียบร้อย", "Done");
+                        } else if (i === activeId) {
+                            setAgentCardState(i, "RUNNING", thoughts[i - 1], "Thinking...");
+                        } else {
+                            setAgentCardState(i, "IDLE", "รอข้อมูลจาก Agent ก่อนหน้า...", "-");
+                        }
+                    }
+                } else {
+                    document.getElementById('run-text').innerText = "Run 4-Agent Pipeline";
+                    document.getElementById('btn-run-pipeline').classList.remove('opacity-75', 'cursor-not-allowed');
+                    document.getElementById('pipeline-ping').classList.add('hidden');
+                    document.getElementById('pipeline-dot').className = "relative inline-flex rounded-full h-3 w-3 bg-emerald-500";
+                    const badge = document.getElementById('pipeline-status-badge');
+                    if (pl.last_run && pl.last_run !== "ยังไม่ได้เริ่มรอบการวิเคราะห์") {
+                        badge.innerText = "COMPLETED";
+                        badge.className = "text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+                    }
+
+                    // Sync all completed cards from logs
+                    if (data.agent_logs && data.agent_logs.length > 0) {
+                        const agentMap = {};
+                        data.agent_logs.forEach(log => {
+                            if (log.agent_name.includes("Agent-1") && !agentMap[1]) agentMap[1] = log;
+                            if (log.agent_name.includes("Agent-2") && !agentMap[2]) agentMap[2] = log;
+                            if (log.agent_name.includes("Agent-3") && !agentMap[3]) agentMap[3] = log;
+                            if (log.agent_name.includes("Agent-4") && !agentMap[4]) agentMap[4] = log;
+                        });
+
+                        if (agentMap[1]) {
+                            setAgentCardState(1, "COMPLETED", agentMap[1].summary, `${Object.keys(agentMap[1].details?.files || {}).length || 5} files`);
+                        }
+                        if (agentMap[2]) {
+                            const vals = Object.values(agentMap[2].details || {});
+                            const avg = vals.reduce((a, c) => a + (c.score || 0), 0) / (vals.length || 1);
+                            setAgentCardState(2, "COMPLETED", agentMap[2].summary, `Avg: ${avg >= 0 ? '+' : ''}${avg.toFixed(2)}`);
+                        }
+                        if (agentMap[3]) {
+                            const cands = agentMap[3].details?.candidates || [];
+                            const buys = cands.filter(c => c.recommendation === 'BUY');
+                            setAgentCardState(3, "COMPLETED", agentMap[3].summary, `${buys.length} หุ้น`);
+                            renderScreenerList(cands);
+                        }
+                        if (agentMap[4]) {
+                            const execCount = agentMap[4].details?.executed?.length || 0;
+                            setAgentCardState(4, "COMPLETED", agentMap[4].summary, `${execCount} orders`);
+                        }
+                    }
+                }
+
+                // Populate initial Cognitive Stream if it only has placeholder
+                if (data.agent_logs && data.agent_logs.length > 0) {
+                    const streamEl = document.getElementById('cognitive-stream');
+                    if (streamEl && streamEl.children.length <= 1) {
+                        streamEl.innerHTML = '';
+                        data.agent_logs.slice(0, 6).reverse().forEach(log => {
+                            const tag = log.agent_name.split(':')[0] || 'AI';
+                            appendCognitiveLog(tag, log.summary, "text-emerald-400");
+                        });
+                    }
+                }
+
+                // 3. Render Positions Table
+                renderPositionsTable(data.positions);
+
+                // 4. Render Orders List
+                renderOrdersList(data.orders);
+
+            } catch (err) {
+                console.error("Error refreshing status:", err);
+            }
+        }
+
+        function renderPositionsTable(positions) {
+            const tbody = document.getElementById('positions-table-body');
+            if (!positions || positions.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-slate-500 font-mono">ไม่มีหุ้นถือครองในพอร์ต (เงินสดพร้อมเข้าซื้อเมื่อมีสัญญาณ)</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = positions.map(p => `
+                <tr class="hover:bg-slate-900/50 transition">
+                    <td class="py-3 font-bold text-white">${p.symbol}</td>
+                    <td class="py-3 font-mono">${p.quantity}</td>
+                    <td class="py-3 font-mono">$${p.average_entry_price.toFixed(2)}</td>
+                    <td class="py-3 font-mono font-medium text-slate-200">$${p.current_price.toFixed(2)}</td>
+                    <td class="py-3 font-mono text-rose-400">$${p.stop_loss_price ? p.stop_loss_price.toFixed(2) : '-'}</td>
+                    <td class="py-3 font-mono text-emerald-400">$${p.take_profit_price ? p.take_profit_price.toFixed(2) : '-'}</td>
+                    <td class="py-3 font-mono font-bold ${p.unrealized_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}">
+                        ${p.unrealized_pnl >= 0 ? '+' : ''}$${p.unrealized_pnl.toFixed(2)} (${p.unrealized_pnl_pct.toFixed(1)}%)
+                    </td>
+                    <td class="py-3 text-right">
+                        <button onclick="closePosition('${p.symbol}')" class="text-[11px] bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded transition">
+                            Close
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderOrdersList(orders) {
+            const container = document.getElementById('orders-list');
+            if (!orders || orders.length === 0) {
+                container.innerHTML = `<p class="text-xs text-slate-500 text-center py-6 font-mono">ยังไม่มีประวัติคำสั่ง</p>`;
+                return;
+            }
+
+            container.innerHTML = orders.slice(0, 10).map(o => `
+                <div class="text-xs bg-slate-900/60 p-2.5 rounded-xl border border-cardBorder flex items-center justify-between">
+                    <div>
+                        <div class="flex items-center gap-1.5">
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold font-mono ${o.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">
+                                ${o.side}
+                            </span>
+                            <span class="font-bold text-white">${o.symbol}</span>
+                            <span class="text-slate-400 font-mono">${o.quantity} shares @ $${o.price}</span>
+                        </div>
+                        <p class="text-[10px] text-slate-400 mt-1 truncate max-w-[200px]" title="${o.reason || ''}">${o.reason || ''}</p>
+                    </div>
+                    <span class="text-[10px] text-slate-500 font-mono">${o.created_at.split(' ')[1] || ''}</span>
+                </div>
+            `).join('');
+        }
+
+        function renderScreenerList(candidates) {
+            const container = document.getElementById('screener-list');
+            if (!candidates || candidates.length === 0) return;
+
+            container.innerHTML = candidates.map(c => `
+                <div class="p-2.5 rounded-xl bg-slate-900/60 border border-cardBorder hover:border-slate-700 transition">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-white text-xs">${c.symbol}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-mono ${c.recommendation === 'BUY' ? 'bg-emerald-500/20 text-emerald-400 font-bold' : c.recommendation === 'SELL' ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-800 text-slate-400'}">
+                                ${c.recommendation}
+                            </span>
+                        </div>
+                        <span class="text-xs font-mono font-bold text-slate-200">Score: ${c.combined_score}</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 flex items-center gap-2 font-mono">
+                        <span>RSI: ${c.rsi}</span>
+                        <span>•</span>
+                        <span>Sentiment: ${c.sentiment_label}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function triggerPipeline() {
+            try {
+                // อัปเดตหน้าจอทันที ไม่ต้องรอ
+                document.getElementById('run-text').innerText = "AI Running...";
+                document.getElementById('btn-run-pipeline').classList.add('opacity-75', 'cursor-not-allowed');
+                document.getElementById('pipeline-ping').classList.remove('hidden');
+                document.getElementById('pipeline-dot').className = "relative inline-flex rounded-full h-3 w-3 bg-sky-400";
+                const badge = document.getElementById('pipeline-status-badge');
+                badge.innerText = "AI COLLABORATING...";
+                badge.className = "text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 border border-sky-500/40 animate-pulse";
+                setAgentCardState(1, "RUNNING", "กำลังเริ่มค้นหาข่าวสาร...", "Thinking...");
+                appendCognitiveLog("SYSTEM", "🚀 สั่งรัน 4-Agent Pipeline รอบใหม่...", "text-sky-400 font-bold");
+
+                const res = await fetch('/api/pipeline/run', { method: 'POST' });
+                const data = await res.json();
+                refreshStatus();
+            } catch (err) {
+                alert("เกิดข้อผิดพลาดในการเรียกใช้ Pipeline: " + err);
+            }
+        }
+
+        async function closePosition(symbol) {
+            if (!confirm(`คุณต้องการปิด Position ของ ${symbol} หรือไม่?`)) return;
+            try {
+                await fetch(`/api/positions/close/${symbol}`, { method: 'POST' });
+                refreshStatus();
+            } catch (err) {
+                alert("เกิดข้อผิดพลาด: " + err);
+            }
+        }
+
+        async function emergencySellAll() {
+            if (!confirm("🚨 ยืนยันการปิดทุก Position ในพอร์ตทันที (Panic Sell All)?")) return;
+            try {
+                await fetch('/api/emergency/sell_all', { method: 'POST' });
+                refreshStatus();
+            } catch (err) {
+                alert("เกิดข้อผิดพลาด: " + err);
+            }
+        }
+
+        // Modal for Markdown Files
+        async function openNewsModal() {
+            const modal = document.getElementById('news-modal');
+            const contentEl = document.getElementById('news-modal-content');
+            modal.classList.remove('hidden');
+
+            try {
+                const res = await fetch('/api/news_files');
+                const data = await res.json();
+                if (!data.files || data.files.length === 0) {
+                    contentEl.innerHTML = `<p class="text-xs text-slate-400 font-mono">ยังไม่มีไฟล์ข่าว Markdown (กด Run 4-Agent Pipeline เพื่อให้ Agent 1 เริ่มดึงข่าว)</p>`;
+                    return;
+                }
+
+                contentEl.innerHTML = data.files.map(f => `
+                    <div class="bg-slate-900/80 p-3 rounded-xl border border-cardBorder flex items-center justify-between">
+                        <div>
+                            <div class="text-xs font-mono font-bold text-sky-400">${f.filename}</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5 font-mono">ขนาด: ${f.size_kb} KB | อัปเดต: ${f.modified}</div>
+                        </div>
+                        <button onclick="readNewsFile('${f.filename}')" class="text-xs bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 px-2.5 py-1 rounded-lg transition">
+                            เปิดอ่าน .md
+                        </button>
+                    </div>
+                `).join('');
+            } catch (err) {
+                contentEl.innerHTML = `<p class="text-xs text-rose-400">เกิดข้อผิดพลาดในการโหลดไฟล์</p>`;
+            }
+        }
+
+        async function readNewsFile(filename) {
+            const contentEl = document.getElementById('news-modal-content');
+            try {
+                const res = await fetch(`/api/news_file/${filename}`);
+                const data = await res.json();
+                contentEl.innerHTML = `
+                    <div class="mb-3 flex items-center justify-between">
+                        <span class="text-xs font-mono text-emerald-400 font-bold">${filename}</span>
+                        <button onclick="openNewsModal()" class="text-xs text-slate-400 hover:text-white">← ย้อนกลับไปรายการไฟล์</button>
+                    </div>
+                    <pre class="text-xs font-mono text-slate-200 bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-x-auto whitespace-pre-wrap">${data.content}</pre>
+                `;
+            } catch (err) {
+                alert("ไม่สามารถเปิดอ่านไฟล์ได้");
+            }
+        }
+
+        function closeNewsModal() {
+            document.getElementById('news-modal').classList.add('hidden');
+        }
+
+        // Setup WebSocket Connection
+        function setupWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+
+            ws.onopen = () => {
+                console.log("WebSocket connected to AI Pipeline stream.");
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleRealtimeEvent(msg);
+                } catch (e) {
+                    console.error("Error parsing WS event:", e);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log("WebSocket disconnected, reconnecting in 2s...");
+                setTimeout(setupWebSocket, 2000);
+            };
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', () => {
+            initChart();
+            loadChart('AAPL');
+            refreshStatus();
+            setupWebSocket();
+
+            // Periodic polling fallback (Fast 1.5s sync)
+            setInterval(refreshStatus, 1500);
+        });
+    </script>
+</body>
+</html>
