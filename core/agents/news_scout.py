@@ -45,7 +45,6 @@ class NewsScoutAgent(AgentBase):
         """ดึงข่าวล่าสุดของหุ้นผ่าน Yahoo Finance News Feed"""
         articles = []
         try:
-            url = f"https://query2.finance.yahoo.com/v1/test/getcrumb"  # check or direct rss
             # ใช้วิธีดึง RSS feed ของ Yahoo Finance สำหรับ Ticker นั้นๆ
             rss_url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={urllib.parse.quote(symbol)}&region=US&lang=en-US"
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -68,16 +67,7 @@ class NewsScoutAgent(AgentBase):
         except Exception as e:
             logger.warning(f"Failed to fetch live RSS for {symbol}: {e}")
 
-        # Fallback สร้าง Headline จำลองตามแนวโน้มตลาด เพื่อไม่ให้ Agent ขาดข้อมูล
-        if not articles:
-            articles = [
-                {
-                    "title": f"Market analysts review quarterly outlook for {symbol}",
-                    "link": "https://finance.yahoo.com",
-                    "pub_date": datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S GMT"),
-                    "summary": f"Institutional investor sentiment shows stable demand for {symbol} amid steady macroeconomic indicators."
-                }
-            ]
+        # ไม่สร้างข่าวจำลอง: ถ้าไม่มีข่าวจริง Agent 2 จะให้ Sentiment เป็น NEUTRAL (ไม่มีข้อมูล)
         return articles
 
     def _save_to_markdown(self, symbol: str, articles: List[Dict[str, str]]) -> Path:
@@ -94,6 +84,9 @@ class NewsScoutAgent(AgentBase):
             "## สรุปหัวข้อข่าวล่าสุด (Latest Headlines)",
             ""
         ]
+
+        if not articles:
+            content.append("_ไม่พบข่าวล่าสุด (ดึง RSS ไม่สำเร็จหรือไม่มีข่าว)_")
 
         for idx, art in enumerate(articles, 1):
             content.extend([
@@ -114,24 +107,29 @@ class NewsScoutAgent(AgentBase):
         self._cleanup_old_files()
         symbols = context.get("symbols", settings.watchlist_symbols)
         created_files: Dict[str, str] = {}
+        article_counts: Dict[str, int] = {}
 
         for symbol in symbols:
             articles = await asyncio.to_thread(self._fetch_stock_news, symbol)
             md_path = self._save_to_markdown(symbol, articles)
             created_files[symbol] = str(md_path)
+            article_counts[symbol] = len(articles)
 
+        no_news = [s for s, n in article_counts.items() if n == 0]
         summary = f"รวบรวมข่าวสารสำหรับหุ้น {len(created_files)} ตัวสำเร็จ ({', '.join(symbols)}) บันทึกเป็น .md ชั่วคราวเรียบร้อย"
+        if no_news:
+            summary += f" | ไม่พบข่าว: {', '.join(no_news)}"
 
         await db_manager.log_agent(
             agent_name=self.name,
             status="SUCCESS",
             summary=summary,
-            details={"files": created_files}
+            details={"files": created_files, "article_counts": article_counts}
         )
 
         return AgentExecutionResult(
             agent_name=self.name,
             status="SUCCESS",
             summary=summary,
-            data={"news_files": created_files}
+            data={"news_files": created_files, "article_counts": article_counts}
         )

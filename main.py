@@ -1,7 +1,5 @@
-import sys
 import logging
 import uvicorn
-from pathlib import Path
 
 from config.settings import settings
 
@@ -23,6 +21,7 @@ def print_banner():
   ● Watchlist:       {', '.join(settings.watchlist_symbols)}
   ● Initial Balance: ${settings.INITIAL_BALANCE:,.2f} {settings.CURRENCY}
   ● Risk per trade:  {settings.MAX_RISK_PER_TRADE_PCT}% | Stop Loss: {settings.STOP_LOSS_PCT}% | Take Profit: {settings.TAKE_PROFIT_PCT}%
+  ● Daily loss cap:  {settings.MAX_DAILY_LOSS_PCT}% | Risk check: every {settings.RISK_CHECK_INTERVAL_SECONDS}s | Auto pipeline: {f"every {settings.PIPELINE_INTERVAL_MINUTES}m" if settings.PIPELINE_INTERVAL_MINUTES > 0 else "manual"}
   ● Dashboard URL:   http://{settings.DASHBOARD_HOST}:{settings.DASHBOARD_PORT}
 ========================================================================
   4 Autonomous Agents Active:
@@ -40,7 +39,7 @@ def main():
         "dashboard.app:app",
         host=settings.DASHBOARD_HOST,
         port=settings.DASHBOARD_PORT,
-        reload=True,
+        reload=settings.DASHBOARD_RELOAD,
         log_level="info"
     )
 

@@ -42,7 +42,7 @@
         }
     </script>
     <!-- TradingView Lightweight Charts CDN -->
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -574,8 +574,11 @@
 
         async function loadChart(symbol) {
             try {
-                const res = await fetch(`/api/chart/${symbol}`);
+                const res = await fetch(`/api/chart/${encodeURIComponent(symbol)}`);
                 const data = await res.json();
+                if (data.synthetic) {
+                    appendCognitiveLog("DATA", `⚠️ ${symbol}: ดึงราคาจริงไม่ได้ กราฟนี้เป็นข้อมูลจำลอง (ไม่ใช้เทรด)`, "text-amber-400");
+                }
                 if (data.data && data.data.length > 0) {
                     candleSeries.setData(data.data.map(d => ({
                         time: d.time,
@@ -597,6 +600,16 @@
             }
         }
 
+        // Escape ข้อความจาก Server/ข่าวภายนอก ก่อนใส่ลง innerHTML (ป้องกัน XSS)
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         // Real-time Cognitive Stream Logger
         function appendCognitiveLog(tag, message, colorClass = "text-sky-400") {
             const stream = document.getElementById('cognitive-stream');
@@ -605,8 +618,8 @@
             entry.className = "flex items-start gap-2 animate-fadeIn";
             entry.innerHTML = `
                 <span class="text-slate-500 text-[10px] select-none">[${now}]</span>
-                <span class="font-bold text-[11px] ${colorClass}">[${tag}]</span>
-                <span class="text-slate-200 text-[11px] flex-1">${message}</span>
+                <span class="font-bold text-[11px] ${colorClass}">[${escapeHtml(tag)}]</span>
+                <span class="text-slate-200 text-[11px] flex-1">${escapeHtml(message)}</span>
             `;
             stream.appendChild(entry);
             stream.scrollTop = stream.scrollHeight;
@@ -696,6 +709,10 @@
                     appendCognitiveLog(`Agent ${id}`, `✓ ${evt.summary || thought}`, "text-emerald-400");
                 }
             }
+            else if (type === "RISK_EXIT") {
+                appendCognitiveLog("RISK MONITOR", evt.message, "text-amber-400 font-bold");
+                refreshStatus();
+            }
             else if (type === "DATA_TRANSFER") {
                 appendCognitiveLog("DATA BEAM", evt.message, "text-indigo-300 italic");
             }
@@ -759,7 +776,7 @@
                     const activeId = pl.current_agent || 1;
                     const thoughts = [
                         "กำลังสแกน RSS และดึงข่าวสารล่าสุด...",
-                        "กำลังเชื่อมต่อ Google Gemini 2.5 Flash เพื่อวิเคราะห์ Sentiment...",
+                        "กำลังวิเคราะห์ Sentiment ของข่าว...",
                         "กำลังคำนวณ EMA 20/50, RSI 14 และจัดอันดับ Setup...",
                         "กำลังคำนวณ Risk Guardrail และส่งคำสั่งเทรด..."
                     ];
@@ -847,8 +864,8 @@
 
             tbody.innerHTML = positions.map(p => `
                 <tr class="hover:bg-slate-900/50 transition">
-                    <td class="py-3 font-bold text-white">${p.symbol}</td>
-                    <td class="py-3 font-mono">${p.quantity}</td>
+                    <td class="py-3 font-bold text-white">${escapeHtml(p.symbol)}</td>
+                    <td class="py-3 font-mono">${escapeHtml(p.quantity)}</td>
                     <td class="py-3 font-mono">$${p.average_entry_price.toFixed(2)}</td>
                     <td class="py-3 font-mono font-medium text-slate-200">$${p.current_price.toFixed(2)}</td>
                     <td class="py-3 font-mono text-rose-400">$${p.stop_loss_price ? p.stop_loss_price.toFixed(2) : '-'}</td>
@@ -857,7 +874,7 @@
                         ${p.unrealized_pnl >= 0 ? '+' : ''}$${p.unrealized_pnl.toFixed(2)} (${p.unrealized_pnl_pct.toFixed(1)}%)
                     </td>
                     <td class="py-3 text-right">
-                        <button onclick="closePosition('${p.symbol}')" class="text-[11px] bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded transition">
+                        <button data-symbol="${escapeHtml(p.symbol)}" onclick="closePosition(this.dataset.symbol)" class="text-[11px] bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-2 py-1 rounded transition">
                             Close
                         </button>
                     </td>
@@ -877,14 +894,14 @@
                     <div>
                         <div class="flex items-center gap-1.5">
                             <span class="px-1.5 py-0.5 rounded text-[10px] font-bold font-mono ${o.side === 'BUY' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">
-                                ${o.side}
+                                ${escapeHtml(o.side)}
                             </span>
-                            <span class="font-bold text-white">${o.symbol}</span>
-                            <span class="text-slate-400 font-mono">${o.quantity} shares @ $${o.price}</span>
+                            <span class="font-bold text-white">${escapeHtml(o.symbol)}</span>
+                            <span class="text-slate-400 font-mono">${escapeHtml(o.quantity)} shares @ $${escapeHtml(o.price)}${o.status === 'REJECTED' ? ' <span class="text-rose-400">(REJECTED)</span>' : ''}</span>
                         </div>
-                        <p class="text-[10px] text-slate-400 mt-1 truncate max-w-[200px]" title="${o.reason || ''}">${o.reason || ''}</p>
+                        <p class="text-[10px] text-slate-400 mt-1 truncate max-w-[200px]" title="${escapeHtml(o.reason)}">${escapeHtml(o.reason)}</p>
                     </div>
-                    <span class="text-[10px] text-slate-500 font-mono">${o.created_at.split(' ')[1] || ''}</span>
+                    <span class="text-[10px] text-slate-500 font-mono">${escapeHtml(o.created_at.split(' ')[1] || '')}</span>
                 </div>
             `).join('');
         }
@@ -897,17 +914,17 @@
                 <div class="p-2.5 rounded-xl bg-slate-900/60 border border-cardBorder hover:border-slate-700 transition">
                     <div class="flex items-center justify-between mb-1">
                         <div class="flex items-center gap-2">
-                            <span class="font-bold text-white text-xs">${c.symbol}</span>
+                            <span class="font-bold text-white text-xs">${escapeHtml(c.symbol)}</span>
                             <span class="text-[10px] px-1.5 py-0.5 rounded font-mono ${c.recommendation === 'BUY' ? 'bg-emerald-500/20 text-emerald-400 font-bold' : c.recommendation === 'SELL' ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-800 text-slate-400'}">
-                                ${c.recommendation}
+                                ${escapeHtml(c.recommendation)}
                             </span>
                         </div>
-                        <span class="text-xs font-mono font-bold text-slate-200">Score: ${c.combined_score}</span>
+                        <span class="text-xs font-mono font-bold text-slate-200">Score: ${escapeHtml(c.combined_score)}</span>
                     </div>
                     <div class="text-[10px] text-slate-400 flex items-center gap-2 font-mono">
-                        <span>RSI: ${c.rsi}</span>
+                        <span>RSI: ${escapeHtml(c.rsi)}</span>
                         <span>•</span>
-                        <span>Sentiment: ${c.sentiment_label}</span>
+                        <span>Sentiment: ${escapeHtml(c.sentiment_label)}</span>
                     </div>
                 </div>
             `).join('');
@@ -937,7 +954,7 @@
         async function closePosition(symbol) {
             if (!confirm(`คุณต้องการปิด Position ของ ${symbol} หรือไม่?`)) return;
             try {
-                await fetch(`/api/positions/close/${symbol}`, { method: 'POST' });
+                await fetch(`/api/positions/close/${encodeURIComponent(symbol)}`, { method: 'POST' });
                 refreshStatus();
             } catch (err) {
                 alert("เกิดข้อผิดพลาด: " + err);
@@ -971,10 +988,10 @@
                 contentEl.innerHTML = data.files.map(f => `
                     <div class="bg-slate-900/80 p-3 rounded-xl border border-cardBorder flex items-center justify-between">
                         <div>
-                            <div class="text-xs font-mono font-bold text-sky-400">${f.filename}</div>
-                            <div class="text-[10px] text-slate-400 mt-0.5 font-mono">ขนาด: ${f.size_kb} KB | อัปเดต: ${f.modified}</div>
+                            <div class="text-xs font-mono font-bold text-sky-400">${escapeHtml(f.filename)}</div>
+                            <div class="text-[10px] text-slate-400 mt-0.5 font-mono">ขนาด: ${escapeHtml(f.size_kb)} KB | อัปเดต: ${escapeHtml(f.modified)}</div>
                         </div>
-                        <button onclick="readNewsFile('${f.filename}')" class="text-xs bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 px-2.5 py-1 rounded-lg transition">
+                        <button data-filename="${escapeHtml(f.filename)}" onclick="readNewsFile(this.dataset.filename)" class="text-xs bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border border-sky-500/30 px-2.5 py-1 rounded-lg transition">
                             เปิดอ่าน .md
                         </button>
                     </div>
@@ -987,14 +1004,15 @@
         async function readNewsFile(filename) {
             const contentEl = document.getElementById('news-modal-content');
             try {
-                const res = await fetch(`/api/news_file/${filename}`);
+                const res = await fetch(`/api/news_file/${encodeURIComponent(filename)}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 contentEl.innerHTML = `
                     <div class="mb-3 flex items-center justify-between">
-                        <span class="text-xs font-mono text-emerald-400 font-bold">${filename}</span>
+                        <span class="text-xs font-mono text-emerald-400 font-bold">${escapeHtml(filename)}</span>
                         <button onclick="openNewsModal()" class="text-xs text-slate-400 hover:text-white">← ย้อนกลับไปรายการไฟล์</button>
                     </div>
-                    <pre class="text-xs font-mono text-slate-200 bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-x-auto whitespace-pre-wrap">${data.content}</pre>
+                    <pre class="text-xs font-mono text-slate-200 bg-slate-950 p-4 rounded-xl border border-slate-800 overflow-x-auto whitespace-pre-wrap">${escapeHtml(data.content)}</pre>
                 `;
             } catch (err) {
                 alert("ไม่สามารถเปิดอ่านไฟล์ได้");

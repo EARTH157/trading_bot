@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy import select, desc, delete
 
 from config.settings import settings
-from database.models import Base, OrderModel, PositionModel, PortfolioSnapshotModel, AgentLogModel
+from database.models import Base, OrderModel, PositionModel, PortfolioSnapshotModel, AgentLogModel, AccountStateModel
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +119,30 @@ class DatabaseManager:
                 }
                 for r in rows
             ]
+
+    async def get_account_state(self) -> Optional[Dict[str, Any]]:
+        """ดึงสถานะบัญชีที่บันทึกไว้ (None หากยังไม่เคยบันทึก)"""
+        async with self.session_factory() as session:
+            row = await session.get(AccountStateModel, 1)
+            if row is None:
+                return None
+            return {
+                "cash_balance": row.cash_balance,
+                "realized_pnl": row.realized_pnl or 0.0,
+                "day_start_date": row.day_start_date,
+                "day_start_equity": row.day_start_equity,
+            }
+
+    async def save_account_state(self, **fields: Any):
+        """บันทึก/อัปเดตสถานะบัญชี (เฉพาะฟิลด์ที่ส่งมา)"""
+        async with self.session_factory() as session:
+            row = await session.get(AccountStateModel, 1)
+            if row is None:
+                row = AccountStateModel(id=1)
+                session.add(row)
+            for key, value in fields.items():
+                setattr(row, key, value)
+            await session.commit()
 
     async def record_snapshot(self, cash: float, equity: float, realized_pnl: float, unrealized_pnl: float):
         """บันทึกภาพรวมสถานะพอร์ตรายช่วงเวลา"""

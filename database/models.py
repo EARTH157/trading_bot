@@ -41,6 +41,18 @@ class PortfolioSnapshotModel(Base):
     unrealized_pnl = Column(Float)
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+class AccountStateModel(Base):
+    """สถานะบัญชี Paper Trading (มีแถวเดียว id=1) เพื่อให้พอร์ตไม่หายเมื่อรีสตาร์ท"""
+    __tablename__ = "account_state"
+
+    id = Column(Integer, primary_key=True)
+    cash_balance = Column(Float)
+    realized_pnl = Column(Float, default=0.0)
+    # Circuit Breaker: Equity ณ ต้นวัน (UTC) ใช้คำนวณขาดทุนรายวัน
+    day_start_date = Column(String(10), nullable=True)  # YYYY-MM-DD
+    day_start_equity = Column(Float, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 class AgentLogModel(Base):
     __tablename__ = "agent_logs"
 

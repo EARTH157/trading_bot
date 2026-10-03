@@ -24,12 +24,19 @@ class MarketScreenerAgent(AgentBase):
 
     async def run(self, context: Dict[str, Any]) -> AgentExecutionResult:
         sentiment_analysis: Dict[str, Any] = context.get("sentiment_analysis", {})
-        symbols = list(sentiment_analysis.keys()) or settings.watchlist_symbols
+        # คัดกรองเฉพาะหุ้นใน Watchlist ที่ตั้งค่าไว้เท่านั้น (ไม่ใช้ Key จากผลลัพธ์ LLM เป็นตัวกำหนดจักรวาลหุ้น)
+        symbols = settings.watchlist_symbols
         screening_results: List[Dict[str, Any]] = []
+        skipped: List[str] = []
 
         for symbol in symbols:
-            df = await data_feed.get_historical_data(symbol, timeframe="1d", period="3mo")
-            if df.empty or len(df) < 20:
+            # 6 เดือน (~125 แท่ง) เพื่อให้ EMA50 มีข้อมูลอุ่นเครื่องเพียงพอ
+            df = await data_feed.get_historical_data(symbol, timeframe="1d", period="6mo")
+            if df.empty or len(df) < 50:
+                skipped.append(f"{symbol}: ข้อมูลราคาไม่พอ ({len(df)} แท่ง)")
+                continue
+            if df.attrs.get("synthetic") and not settings.ALLOW_SYNTHETIC_TRADING:
+                skipped.append(f"{symbol}: ไม่มีข้อมูลราคาจริง (ข้ามการคัดกรอง)")
                 continue
 
             latest_close = float(df["close"].iloc[-1])
@@ -94,17 +101,20 @@ class MarketScreenerAgent(AgentBase):
 
         buy_candidates = [r["symbol"] for r in screening_results if r["recommendation"] == "BUY"]
         summary = f"คัดกรองเสร็จสิ้น: พบหุ้นน่าสนใจสำหรับพอร์ต (BUY) {len(buy_candidates)} ตัว: {', '.join(buy_candidates) if buy_candidates else 'ไม่มี (รอจังหวะ)'}"
+        if skipped:
+            summary += f" | ข้าม {len(skipped)} ตัว (ไม่มีข้อมูลราคาจริง)"
+        status = "WARNING" if skipped else "SUCCESS"
 
         await db_manager.log_agent(
             agent_name=self.name,
-            status="SUCCESS",
+            status=status,
             summary=summary,
-            details={"candidates": screening_results}
+            details={"candidates": screening_results, "skipped": skipped}
         )
 
         return AgentExecutionResult(
             agent_name=self.name,
-            status="SUCCESS",
+            status=status,
             summary=summary,
             data={"screening_results": screening_results, "buy_candidates": buy_candidates}
         )

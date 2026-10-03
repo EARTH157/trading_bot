@@ -19,6 +19,8 @@ class Quote(BaseModel):
     change_pct: float = 0.0
     volume: float = 0.0
     timestamp: datetime
+    # True = ราคาจำลองเพราะดึงราคาจริงไม่ได้ ห้ามใช้ส่งคำสั่งหรือตัดสิน Stop Loss
+    is_synthetic: bool = False
 
 class DataFeedBase(ABC):
     """Abstract Base Class สำหรับ Data Feed (ดึงราคาหุ้นและกราฟแท่งเทียน)"""
@@ -28,11 +30,12 @@ class DataFeedBase(ABC):
         self,
         symbol: str,
         timeframe: str = "1d",
-        period: str = "3mo"
+        period: str = "6mo"
     ) -> pd.DataFrame:
         """
         ดึงข้อมูลแท่งเทียนย้อนหลัง (OHLCV)
         คืนค่าเป็น pandas DataFrame ที่มีคอลัมน์: open, high, low, close, volume
+        และตั้ง df.attrs["synthetic"] = True หากเป็นข้อมูลจำลอง
         """
         pass
 

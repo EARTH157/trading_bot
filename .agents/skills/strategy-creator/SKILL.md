@@ -12,6 +12,7 @@ description: >-
 
 1. **สืบทอดจาก StrategyBase**:
    - กลยุทธ์ใหม่ต้องสืบทอดมาจาก `core.interfaces.strategy.StrategyBase`
+   - หมายเหตุ: ตอนนี้ยังไม่มี `core/interfaces/strategy.py` และ `core/strategies/` ในโค้ด หากเป็นกลยุทธ์แรก ให้สร้าง Interface และ Registry ก่อน
    - ต้องตั้งชื่อ Class ให้สื่อความหมาย เช่น `EmaCrossoverStrategy`, `RsiMeanReversionStrategy`
 
 2. **Implement เมธอดสำคัญ**:

@@ -82,6 +82,13 @@ class BrokerBase(ABC):
         pass
 
     @abstractmethod
+    async def update_exit_levels(
+        self, symbol: str, stop_loss_price: Optional[float], take_profit_price: Optional[float]
+    ) -> bool:
+        """ปรับราคา Stop Loss / Take Profit ของ Position ที่เปิดอยู่ (คืน False หากไม่มี Position)"""
+        pass
+
+    @abstractmethod
     async def close_position(self, symbol: str, reason: str = "Manual Close") -> Optional[OrderResponse]:
         """ปิดออเดอร์หุ้นทั้งหมดในสัญลักษณ์ที่ระบุ"""
         pass

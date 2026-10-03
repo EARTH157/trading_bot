@@ -13,11 +13,11 @@
 - **Modular & Abstract**: 
   - Broker ต้องสืบทอดจาก `core.interfaces.broker.BrokerBase`
   - Data Feed ต้องสืบทอดจาก `core.interfaces.data_feed.DataFeedBase`
-  - Strategy ต้องสืบทอดจาก `core.interfaces.strategy.StrategyBase`
+  - Strategy ต้องสืบทอดจาก `core.interfaces.strategy.StrategyBase` (ยังไม่มีในโค้ด — ต้องสร้าง Interface นี้ก่อนเพิ่ม Strategy แรก)
 - **Supported Markets**:
-  1. Paper Simulator (Yahoo Finance / Synthetic Feed)
-  2. US Stocks (Alpaca Markets API)
-  3. Thai Stocks (SETTRADE Open API)
+  1. Paper Simulator (Yahoo Finance) — มีแล้ว
+  2. US Stocks (Alpaca Markets API) — แผนในอนาคต (ยังไม่ได้ Implement)
+  3. Thai Stocks (SETTRADE Open API) — แผนในอนาคต (ยังไม่ได้ Implement)
 - **Tech Stack**:
   - Python 3.10+ (Type Hinting ครบถ้วน)
   - FastAPI สำหรับ Web Dashboard & Real-time WebSockets

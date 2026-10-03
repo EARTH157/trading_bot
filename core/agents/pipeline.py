@@ -7,6 +7,8 @@ from core.agents.news_scout import NewsScoutAgent
 from core.agents.sentiment_analyst import SentimentAnalystAgent
 from core.agents.market_screener import MarketScreenerAgent
 from core.agents.risk_guardian import RiskExecutionAgent
+from core.brokers.paper_broker import broker
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,13 @@ class TradingPipeline:
         self.last_run_time: str = "ยังไม่ได้เริ่มรอบการวิเคราะห์"
         self.latest_pipeline_result: Dict[str, Any] = {}
         self.listeners: List[Callable] = []
+        # ตั้งค่าเมื่อผู้ใช้กด Panic Button: Agent 4 จะไม่เปิด Position ใหม่ในรอบที่กำลังทำงาน
+        self.stop_event = asyncio.Event()
+
+    def request_stop(self):
+        """ขอให้รอบที่กำลังทำงานหยุดเปิด Position ใหม่ (มีผลจนกว่าจะเริ่มรอบถัดไป)"""
+        if self.is_running:
+            self.stop_event.set()
 
     def add_listener(self, callback: Callable):
         """เพิ่มฟังก์ชันสำหรับรับ Real-time Events (เช่น WebSocket Broadcaster)"""
@@ -54,6 +63,7 @@ class TradingPipeline:
             return {"status": "ALREADY_RUNNING", "message": "รอบการวิเคราะห์กำลังดำเนินการอยู่"}
 
         self.is_running = True
+        self.stop_event.clear()
         start_time = datetime.utcnow()
         cycle_result = {"started_at": start_time.strftime("%Y-%m-%d %H:%M:%S UTC"), "steps": []}
 
@@ -71,7 +81,7 @@ class TradingPipeline:
             await self.emit_event("AGENT_STATE", {
                 "agent_id": 1,
                 "status": "RUNNING",
-                "thought": "กำลังสแกน RSS และดึงข่าวสารล่าสุดของ AAPL, NVDA, MSFT, TSLA, AMZN..."
+                "thought": f"กำลังสแกน RSS และดึงข่าวสารล่าสุดของ {', '.join(settings.watchlist_symbols)}..."
             })
             await asyncio.sleep(0.8)
 
@@ -102,7 +112,11 @@ class TradingPipeline:
             await self.emit_event("AGENT_STATE", {
                 "agent_id": 2,
                 "status": "RUNNING",
-                "thought": "กำลังเชื่อมต่อ Google Gemini 2.5 Flash เพื่อวิเคราะห์ Sentiment และสกัด Catalysts/Risks..."
+                "thought": (
+                    f"กำลังเชื่อมต่อ Google Gemini ({settings.GEMINI_MODEL}) เพื่อวิเคราะห์ Sentiment และสกัด Catalysts/Risks..."
+                    if self.agent2.gemini_client else
+                    "ไม่มี GEMINI_API_KEY: วิเคราะห์ Sentiment ด้วย Heuristic Engine..."
+                )
             })
             await asyncio.sleep(0.8)
 
@@ -168,7 +182,7 @@ class TradingPipeline:
             })
             await asyncio.sleep(0.8)
 
-            res4 = await self.agent4.run(res3.data)
+            res4 = await self.agent4.run({**res3.data, "stop_event": self.stop_event})
             cycle_result["steps"].append(res4.model_dump())
 
             await self.emit_event("AGENT_STATE", {
@@ -179,6 +193,8 @@ class TradingPipeline:
                 "data": res4.data
             })
             await asyncio.sleep(0.6)
+
+            await broker.record_snapshot()
 
             cycle_result["status"] = "SUCCESS"
             cycle_result["completed_at"] = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")

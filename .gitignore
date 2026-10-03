@@ -1,4 +1,4 @@
-﻿# Environment variables & secrets (CRITICAL)
+# Environment variables & secrets (CRITICAL)
 .env
 .env.local
 *.key
